@@ -172,65 +172,67 @@ class EmployeeAPI(http.Controller):
         )
 
 
-    @http.route('/api/hr/employees/<int:employee_id>', type='json', auth='user', methods=['PUT'])
-    def update_employee(self, employee_id, **data):
+    @http.route('/api/hr/employees/<int:employee_id>', type='http', auth='user', methods=['PUT'], csrf=False)
+    def update_employee(self, employee_id, **kwargs):
         Employee = request.env['hr.employee'].sudo()
-        employee = Employee.search([('id', '=', employee_id)], limit=1)
-        if not employee:
-            return {"error": "Employee not found"}
+        employee = Employee.browse(employee_id)
 
-        updatable_fields = [
-            "name", "birthday", "gender", "work_phone", "work_email",
-            "department_id", "job_id", "x_id_number", "x_id_issued_place",
-            "x_id_issued_date", "permanent_address", "x_temporary_address",
-            "x_tax_id", "x_insurance_id", "x_bank_account"
+        if not employee.exists():
+            return request.make_json_response({"error": "Employee not found"}, status=404)
+
+        # Lấy JSON body từ request
+        try:
+            data = request.httprequest.get_json(force=True, silent=True) or {}
+        except Exception:
+            data = {}
+
+        allowed_fields = [
+            'name', 'work_email', 'work_phone',
+            'birthday', 'gender',
         ]
 
-        vals = {}
-        for f in updatable_fields:
-            if f in data:
-                value = data[f]
+        updates = {}
+        ignored_fields = {}
+        unchanged_fields = {}
 
-                # Xử lý Many2one
-                if f in ['department_id', 'job_id'] and isinstance(value, dict):
-                    value = value.get('id')
+        for field in allowed_fields:
+            if field in data:
+                new_value = data[field]
+                old_value = employee[field]
 
-                # Xử lý date
-                if f in ['birthday', 'x_id_issued_date'] and isinstance(value, str):
-                    try:
-                        datetime.strptime(value, "%Y-%m-%d")
-                    except ValueError:
-                        continue  # bỏ qua nếu không đúng định dạng
+                if new_value in (None, "", False):
+                    ignored_fields[field] = {
+                        "reason": "empty",
+                        "old_value": old_value,
+                        "new_value": new_value
+                    }
+                    continue
 
-                vals[f] = value
+                if str(old_value) == str(new_value):
+                    unchanged_fields[field] = {
+                        "reason": "unchanged",
+                        "old_value": old_value,
+                        "new_value": new_value
+                    }
+                    continue
 
-        if vals:
-            employee.write(vals)
+                updates[field] = new_value
 
-        # Trả về profile mới
-        profile = {
-            "id": employee.id,
-            "name": employee.name,
-            "birthday": str(employee.birthday) if employee.birthday else None,
-            "gender": employee.gender,
-            "work_phone": employee.work_phone,
-            "work_email": employee.work_email,
-            "department": employee.department_id.name if employee.department_id else None,
-            "job": employee.job_id.name if employee.job_id else None,
-            "x_id_number": employee.x_id_number,
-            "x_id_issued_place": employee.x_id_issued_place,
-            "x_id_issued_date": str(employee.x_id_issued_date) if employee.x_id_issued_date else None,
-            "permanent_address": employee.permanent_address,
-            "x_temporary_address": employee.x_temporary_address,
-            "x_tax_id": employee.x_tax_id,
-            "x_insurance_id": employee.x_insurance_id,
-            "x_bank_account": employee.x_bank_account,
-        }
-
-        return {
-            "message": "Updated successfully",
-            "profile": profile
-        }
+        if updates:
+            employee.write(updates)
+            return request.make_json_response({
+                "success": True,
+                "updated_fields": updates,
+                "ignored_fields": ignored_fields,
+                "unchanged_fields": unchanged_fields
+            }, status=200)
+        else:
+            return request.make_json_response({
+                "message": "No fields updated (empty or unchanged)",
+                "ignored_fields": ignored_fields,
+                "unchanged_fields": unchanged_fields,
+                "received_data": data
+            }, status=200)
 
     @http.route('/api/hr/employees/<int:employee_id>', type='http', auth='user', methods=['DELETE'], csrf=False)
     def delete_employee(self, employee_id, **kwargs):

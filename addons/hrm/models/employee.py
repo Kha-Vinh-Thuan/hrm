@@ -1,4 +1,6 @@
-from odoo import models, fields
+from odoo import models, fields, api
+from odoo.exceptions import ValidationError
+import re
 
 class HrEmployee(models.Model):
     _inherit = "hr.employee"
@@ -28,3 +30,11 @@ class HrEmployee(models.Model):
         ("x_id_number_unique", "unique(x_id_number)", "ID number must be unique!"),
         ("work_email_unique", "unique(work_email)", "Work email must be unique!"),
     ]
+
+    @api.constrains('x_id_number')
+    def _check_x_id_number(self):
+        for record in self:
+            if record.x_id_number:
+                # kiểm tra phải đúng 12 ký tự số
+                if not re.fullmatch(r"\d{12}", record.x_id_number):
+                    raise ValidationError("ID/CCCD Number must be exactly 12 digits!")
