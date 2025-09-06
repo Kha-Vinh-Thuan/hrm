@@ -35,6 +35,5 @@ class HrEmployee(models.Model):
     def _check_x_id_number(self):
         for record in self:
             if record.x_id_number:
-                # kiểm tra phải đúng 12 ký tự số
                 if not re.fullmatch(r"\d{12}", record.x_id_number):
                     raise ValidationError("ID/CCCD Number must be exactly 12 digits!")
